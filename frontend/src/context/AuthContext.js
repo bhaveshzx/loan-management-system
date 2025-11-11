@@ -97,7 +97,8 @@ export function AuthProvider({ children }) {
           api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
           setUser(user);
           setLoading(false);
-          return user;
+          // Return user object with requires_otp flag for component handling
+          return { requires_otp: false, user };
         }
       }
       

@@ -54,3 +54,11 @@ htmlcov/
 # Logs
 *.log
 
+# OS files
+Thumbs.db
+.DS_Store
+
+# Railway/Render specific (keep config files, ignore local)
+.railway/
+.render/
+

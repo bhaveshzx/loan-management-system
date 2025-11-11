@@ -26,11 +26,13 @@ api.interceptors.request.use(
     const publicEndpoints = [
       '/auth/register',
       '/auth/login',
-      '/auth/admin/login',
       '/auth/verify-otp',
       '/auth/resend-otp',
       '/auth/verify-login-otp',
-      '/auth/resend-login-otp'
+      '/auth/resend-login-otp',
+      '/auth/forgot-password',
+      '/auth/forgot-password/verify',
+      '/auth/forgot-password/reset'
     ];
     
     const isPublicEndpoint = publicEndpoints.some(endpoint => 

@@ -1,9 +1,10 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import Landing from './components/Landing';
 import Login from './components/Login';
-import AdminLogin from './components/AdminLogin';
 import Register from './components/Register';
+import ForgotPassword from './components/ForgotPassword';
 import Dashboard from './components/Dashboard';
 import Profile from './components/Profile';
 import Loans from './components/Loans';
@@ -37,9 +38,10 @@ function AppRoutes() {
     <>
       {user && <Navbar />}
       <Routes>
+        <Route path="/" element={!user ? <Landing /> : <Navigate to="/dashboard" replace />} />
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" replace />} />
-        <Route path="/admin/login" element={!user ? <AdminLogin /> : <Navigate to="/dashboard" replace />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/dashboard" replace />} />
+        <Route path="/forgot-password" element={!user ? <ForgotPassword /> : <Navigate to="/dashboard" replace />} />
         <Route
           path="/dashboard"
           element={
@@ -72,7 +74,6 @@ function AppRoutes() {
             </PrivateRoute>
           }
         />
-        <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </>
   );

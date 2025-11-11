@@ -82,7 +82,7 @@ def missing_token_callback(error):
     return jsonify({'error': 'Authorization token is missing'}), 401
 
 # Import models after db is initialized
-from models import User, Loan, Profile, PendingRegistration, PendingLogin
+from models import User, Loan, Profile, PendingRegistration, PendingLogin, PasswordReset
 
 # Import routes
 from routes.auth import auth_bp
@@ -113,10 +113,12 @@ def index():
                 'POST /api/auth/register': 'Register new user (sends OTP)',
                 'POST /api/auth/verify-otp': 'Verify OTP and complete registration',
                 'POST /api/auth/resend-otp': 'Resend OTP for registration',
-                'POST /api/auth/login': 'Login regular user (sends OTP)',
-                'POST /api/auth/admin/login': 'Admin login (no OTP required)',
+                'POST /api/auth/login': 'Login (unified for admin and user)',
                 'POST /api/auth/verify-login-otp': 'Verify OTP and complete login',
                 'POST /api/auth/resend-login-otp': 'Resend OTP for login',
+                'POST /api/auth/forgot-password': 'Request password reset OTP',
+                'POST /api/auth/forgot-password/verify': 'Verify password reset OTP',
+                'POST /api/auth/forgot-password/reset': 'Reset password with token',
                 'POST /api/auth/test-email': 'Test email configuration',
                 'GET /api/auth/me': 'Get current user (requires JWT)'
             },

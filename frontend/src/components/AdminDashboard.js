@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import './dashboard.css';
 
 function AdminDashboard() {
   const navigate = useNavigate();
@@ -11,19 +12,49 @@ function AdminDashboard() {
   const [approvedLoans, setApprovedLoans] = useState([]);
   const [rejectedLoans, setRejectedLoans] = useState([]);
   const [reasons, setReasons] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [toasts, setToasts] = useState([]);
+  const [selectedLoan, setSelectedLoan] = useState(null);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [adminNotes, setAdminNotes] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    fetchStats();
-    fetchPendingLoans();
-    fetchApprovedLoans();
-    fetchRejectedLoans();
-    fetchRejectionReasons();
+    loadAllData();
   }, []);
+
+  const loadAllData = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([
+        fetchStats(),
+        fetchPendingLoans(),
+        fetchApprovedLoans(),
+        fetchRejectedLoans(),
+        fetchRejectionReasons()
+      ]);
+    } catch (error) {
+      showToast('Failed to load dashboard data', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showToast = (message, type = 'info') => {
+    const id = Date.now();
+    const toast = { id, message, type };
+    setToasts(prev => [...prev, toast]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
 
   const fetchStats = async () => {
     try {
       const response = await api.get('/loans');
-      const loans = response.data.loans;
+      const loans = response.data.loans || [];
       setStats({
         total: loans.length,
         pending: loans.filter(l => l.status === 'pending').length,
@@ -32,15 +63,17 @@ function AdminDashboard() {
       });
     } catch (error) {
       console.error('Failed to fetch stats:', error);
+      throw error;
     }
   };
 
   const fetchPendingLoans = async () => {
     try {
       const response = await api.get('/admin/loans/pending');
-      setPendingLoans(response.data.loans);
+      setPendingLoans(response.data.loans || []);
     } catch (error) {
       console.error('Failed to fetch pending loans:', error);
+      throw error;
     }
   };
 
@@ -48,19 +81,13 @@ function AdminDashboard() {
     try {
       const response = await api.get('/loans');
       const loans = response.data.loans || [];
-      console.log('All loans fetched for approved:', loans.length);
       const approved = loans
         .filter(l => l.status === 'approved')
         .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-      console.log('Approved loans filtered:', approved.length, approved.map(l => ({ id: l.id, status: l.status })));
-      // Use functional update to ensure React detects the change
-      setApprovedLoans(prev => {
-        const newApproved = [...approved];
-        console.log('Setting approved loans:', newApproved.length);
-        return newApproved;
-      });
+      setApprovedLoans(approved);
     } catch (error) {
       console.error('Failed to fetch approved loans:', error);
+      throw error;
     }
   };
 
@@ -68,106 +95,288 @@ function AdminDashboard() {
     try {
       const response = await api.get('/loans');
       const loans = response.data.loans || [];
-      console.log('All loans fetched for rejected:', loans.length);
       const rejected = loans
         .filter(l => l.status === 'rejected')
         .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-      console.log('Rejected loans filtered:', rejected.length, rejected.map(l => ({ id: l.id, status: l.status })));
-      // Use functional update to ensure React detects the change
-      setRejectedLoans(prev => {
-        const newRejected = [...rejected];
-        console.log('Setting rejected loans:', newRejected.length);
-        return newRejected;
-      });
+      setRejectedLoans(rejected);
     } catch (error) {
       console.error('Failed to fetch rejected loans:', error);
+      throw error;
     }
   };
 
   const fetchRejectionReasons = async () => {
     try {
       const response = await api.get('/admin/rejection-reasons');
-      setReasons(response.data.reasons);
+      setReasons(response.data.reasons || []);
     } catch (error) {
       console.error('Failed to fetch rejection reasons:', error);
+      throw error;
     }
   };
 
-  const handleApprove = async (loanId, adminNotes = '') => {
+  const handleApproveClick = (loan) => {
+    setSelectedLoan(loan);
+    setAdminNotes('');
+    setShowApproveModal(true);
+  };
+
+  const handleRejectClick = (loan) => {
+    setSelectedLoan(loan);
+    setAdminNotes('');
+    setRejectionReason('');
+    setShowRejectModal(true);
+  };
+
+  const handleApprove = async () => {
+    if (!selectedLoan) return;
+    
+    setActionLoading(true);
     try {
-      const response = await api.post(`/admin/loans/${loanId}/approve`, { admin_notes: adminNotes });
-      console.log('Approval response:', response.data);
-      // Small delay to ensure database is updated
-      await new Promise(resolve => setTimeout(resolve, 100));
-      // Refresh stats and all loan lists
+      await api.post(`/admin/loans/${selectedLoan.id}/approve`, { admin_notes: adminNotes });
+      showToast('Loan approved successfully!', 'success');
+      setShowApproveModal(false);
+      setSelectedLoan(null);
+      setAdminNotes('');
+      // Refresh all data
       await Promise.all([
         fetchStats(),
         fetchPendingLoans(),
         fetchApprovedLoans(),
         fetchRejectedLoans()
       ]);
-      alert('Loan approved successfully!');
     } catch (error) {
       console.error('Approval error:', error);
-      alert(error.response?.data?.error || 'Failed to approve loan');
+      showToast(error.response?.data?.error || 'Failed to approve loan', 'error');
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleReject = async (loanId, rejectionReason, adminNotes = '') => {
+  const handleReject = async () => {
+    if (!selectedLoan) return;
     if (!rejectionReason) {
-      alert('Please select a rejection reason');
+      showToast('Please select a rejection reason', 'error');
       return;
     }
+    
+    setActionLoading(true);
     try {
-      const response = await api.post(`/admin/loans/${loanId}/reject`, {
+      await api.post(`/admin/loans/${selectedLoan.id}/reject`, {
         rejection_reason: rejectionReason,
         admin_notes: adminNotes,
       });
-      console.log('Rejection response:', response.data);
-      // Small delay to ensure database is updated
-      await new Promise(resolve => setTimeout(resolve, 100));
-      // Refresh stats and all loan lists
+      showToast('Loan rejected successfully!', 'success');
+      setShowRejectModal(false);
+      setSelectedLoan(null);
+      setAdminNotes('');
+      setRejectionReason('');
+      // Refresh all data
       await Promise.all([
         fetchStats(),
         fetchPendingLoans(),
         fetchApprovedLoans(),
         fetchRejectedLoans()
       ]);
-      alert('Loan rejected successfully!');
     } catch (error) {
       console.error('Rejection error:', error);
-      alert(error.response?.data?.error || 'Failed to reject loan');
+      showToast(error.response?.data?.error || 'Failed to reject loan', 'error');
+    } finally {
+      setActionLoading(false);
     }
   };
 
+  const closeModals = () => {
+    setShowApproveModal(false);
+    setShowRejectModal(false);
+    setSelectedLoan(null);
+    setAdminNotes('');
+    setRejectionReason('');
+  };
+
+  if (loading) {
+    return (
+      <div className="dashboard-container">
+        <div className="dashboard-loading">
+          <div className="loading-spinner-large"></div>
+          <p className="loading-text">Loading admin dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const getDaysPendingClass = (days) => {
+    if (days >= 4) return 'urgent';
+    if (days >= 2) return 'warning';
+    return 'normal';
+  };
+
   return (
-    <div className="container">
-      <h1>Admin Dashboard</h1>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginTop: '20px' }}>
-        <div className="card">
-          <h3>Total Loans</h3>
-          <p style={{ fontSize: '32px', fontWeight: 'bold' }}>{stats.total}</p>
+    <div className="dashboard-container">
+      {/* Toast Notifications */}
+      <div className="toast-container">
+        {toasts.map(toast => (
+          <div key={toast.id} className={`toast ${toast.type}`}>
+            <span className="toast-icon">
+              {toast.type === 'success' ? '✓' : toast.type === 'error' ? '✗' : 'ℹ️'}
+            </span>
+            <span className="toast-message">{toast.message}</span>
+            <button className="toast-close" onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}>
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Approve Modal */}
+      {showApproveModal && selectedLoan && (
+        <div className="modal-overlay" onClick={closeModals}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Approve Loan #{selectedLoan.id}</h3>
+              <button className="modal-close" onClick={closeModals}>×</button>
+            </div>
+            <div className="modal-body">
+              <p><strong>User:</strong> {selectedLoan.user?.username}</p>
+              <p><strong>Amount:</strong> ${selectedLoan.amount.toLocaleString()}</p>
+              <p><strong>Purpose:</strong> {selectedLoan.purpose}</p>
+              <div className="form-group" style={{ marginTop: '20px' }}>
+                <label>Admin Notes (optional)</label>
+                <textarea
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                  rows="4"
+                  placeholder="Add any notes about this approval..."
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeModals} disabled={actionLoading}>
+                Cancel
+              </button>
+              <button className="btn btn-success" onClick={handleApprove} disabled={actionLoading}>
+                {actionLoading ? 'Approving...' : 'Approve Loan'}
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="card">
-          <h3>Pending Review</h3>
-          <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#ffc107' }}>{stats.pending}</p>
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && selectedLoan && (
+        <div className="modal-overlay" onClick={closeModals}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reject Loan #{selectedLoan.id}</h3>
+              <button className="modal-close" onClick={closeModals}>×</button>
+            </div>
+            <div className="modal-body">
+              <p><strong>User:</strong> {selectedLoan.user?.username}</p>
+              <p><strong>Amount:</strong> ${selectedLoan.amount.toLocaleString()}</p>
+              <p><strong>Purpose:</strong> {selectedLoan.purpose}</p>
+              <div className="form-group" style={{ marginTop: '20px' }}>
+                <label>Rejection Reason *</label>
+                <select
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  required
+                >
+                  <option value="">Select a reason...</option>
+                  {reasons.map((reason) => (
+                    <option key={reason.code} value={reason.code}>
+                      {reason.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Admin Notes (optional)</label>
+                <textarea
+                  value={adminNotes}
+                  onChange={(e) => setAdminNotes(e.target.value)}
+                  rows="4"
+                  placeholder="Add any additional notes about this rejection..."
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeModals} disabled={actionLoading}>
+                Cancel
+              </button>
+              <button 
+                className="btn btn-danger" 
+                onClick={handleReject} 
+                disabled={actionLoading || !rejectionReason}
+              >
+                {actionLoading ? 'Rejecting...' : 'Reject Loan'}
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="card">
-          <h3>Approved</h3>
-          <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#28a745' }}>{stats.approved}</p>
+      )}
+
+      <div className="dashboard-header">
+        <div>
+          <h1>Admin Dashboard</h1>
+          <p className="dashboard-welcome">Manage and review loan applications</p>
         </div>
-        <div className="card">
-          <h3>Rejected</h3>
-          <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#dc3545' }}>{stats.rejected}</p>
+        <button className="btn-refresh" onClick={loadAllData} disabled={loading}>
+          <span>🔄</span>
+          Refresh
+        </button>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card total">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Total Loans</span>
+            <span className="stat-card-icon">📊</span>
+          </div>
+          <p className="stat-card-value">{stats.total}</p>
+          <p className="stat-card-change">All loan applications</p>
+        </div>
+
+        <div className="stat-card pending">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Pending Review</span>
+            <span className="stat-card-icon">⏳</span>
+          </div>
+          <p className="stat-card-value">{stats.pending}</p>
+          <p className="stat-card-change">Awaiting action</p>
+        </div>
+
+        <div className="stat-card approved">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Approved</span>
+            <span className="stat-card-icon">✓</span>
+          </div>
+          <p className="stat-card-value">{stats.approved}</p>
+          <p className="stat-card-change">Successfully approved</p>
+        </div>
+
+        <div className="stat-card rejected">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Rejected</span>
+            <span className="stat-card-icon">✗</span>
+          </div>
+          <p className="stat-card-value">{stats.rejected}</p>
+          <p className="stat-card-change">Not approved</p>
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: '20px' }}>
-        <h2>Pending Loans ({pendingLoans.length})</h2>
+      <div className="dashboard-table-card">
+        <h2>
+          Pending Loans
+          <span className="table-count-badge">{pendingLoans.length}</span>
+        </h2>
         {pendingLoans.length === 0 ? (
-          <p>No pending loans.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">✓</div>
+            <p className="empty-state-text">No pending loans</p>
+            <p className="empty-state-subtext">All loans have been reviewed</p>
+          </div>
         ) : (
-          <table className="table">
+          <table className="dashboard-table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -193,9 +402,9 @@ function AdminDashboard() {
                           e.preventDefault();
                           navigate(`/loans/${loan.id}`);
                         }}
-                        style={{ color: '#007bff', textDecoration: 'underline', cursor: 'pointer' }}
+                        className="table-link"
                       >
-                        {loan.id}
+                        #{loan.id}
                       </a>
                     </td>
                     <td>{loan.user?.username}</td>
@@ -203,17 +412,25 @@ function AdminDashboard() {
                     <td>{loan.purpose}</td>
                     <td>{new Date(loan.created_at).toLocaleDateString()}</td>
                     <td>
-                      <span style={{ color: daysPending >= 4 ? '#dc3545' : '#ffc107', fontWeight: 'bold' }}>
+                      <span className={`days-pending ${getDaysPendingClass(daysPending)}`}>
                         {daysPending} day{daysPending !== 1 ? 's' : ''}
                       </span>
                     </td>
                     <td>
-                      <LoanActionButtons
-                        loan={loan}
-                        onApprove={handleApprove}
-                        onReject={handleReject}
-                        reasons={reasons}
-                      />
+                      <div className="table-actions">
+                        <button
+                          className="btn-table btn-table-success"
+                          onClick={() => handleApproveClick(loan)}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="btn-table btn-table-danger"
+                          onClick={() => handleRejectClick(loan)}
+                        >
+                          Reject
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -223,12 +440,19 @@ function AdminDashboard() {
         )}
       </div>
 
-      <div className="card" style={{ marginTop: '20px' }}>
-        <h2>Approved Loans ({approvedLoans.length})</h2>
+      <div className="dashboard-table-card">
+        <h2>
+          Approved Loans
+          <span className="table-count-badge">{approvedLoans.length}</span>
+        </h2>
         {approvedLoans.length === 0 ? (
-          <p>No approved loans.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">📋</div>
+            <p className="empty-state-text">No approved loans</p>
+            <p className="empty-state-subtext">Approved loans will appear here</p>
+          </div>
         ) : (
-          <table className="table">
+          <table className="dashboard-table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -250,9 +474,9 @@ function AdminDashboard() {
                         e.preventDefault();
                         navigate(`/loans/${loan.id}`);
                       }}
-                      style={{ color: '#007bff', textDecoration: 'underline', cursor: 'pointer' }}
+                      className="table-link"
                     >
-                      {loan.id}
+                      #{loan.id}
                     </a>
                   </td>
                   <td>{loan.user?.username}</td>
@@ -268,12 +492,19 @@ function AdminDashboard() {
         )}
       </div>
 
-      <div className="card" style={{ marginTop: '20px' }}>
-        <h2>Rejected Loans ({rejectedLoans.length})</h2>
+      <div className="dashboard-table-card">
+        <h2>
+          Rejected Loans
+          <span className="table-count-badge">{rejectedLoans.length}</span>
+        </h2>
         {rejectedLoans.length === 0 ? (
-          <p>No rejected loans.</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">📋</div>
+            <p className="empty-state-text">No rejected loans</p>
+            <p className="empty-state-subtext">Rejected loans will appear here</p>
+          </div>
         ) : (
-          <table className="table">
+          <table className="dashboard-table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -296,9 +527,9 @@ function AdminDashboard() {
                         e.preventDefault();
                         navigate(`/loans/${loan.id}`);
                       }}
-                      style={{ color: '#007bff', textDecoration: 'underline', cursor: 'pointer' }}
+                      className="table-link"
                     >
-                      {loan.id}
+                      #{loan.id}
                     </a>
                   </td>
                   <td>{loan.user?.username}</td>
@@ -307,7 +538,7 @@ function AdminDashboard() {
                   <td>{new Date(loan.created_at).toLocaleDateString()}</td>
                   <td>{loan.updated_at ? new Date(loan.updated_at).toLocaleDateString() : '-'}</td>
                   <td>
-                    <span style={{ color: '#dc3545', fontWeight: 'bold' }}>
+                    <span className="status-badge rejected">
                       {loan.rejection_reason || 'N/A'}
                     </span>
                   </td>
@@ -322,148 +553,6 @@ function AdminDashboard() {
   );
 }
 
-function LoanActionButtons({ loan, onApprove, onReject, reasons }) {
-  const [showApprove, setShowApprove] = useState(false);
-  const [showReject, setShowReject] = useState(false);
-  const [adminNotes, setAdminNotes] = useState('');
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleApproveClick = async () => {
-    setLoading(true);
-    await onApprove(loan.id, adminNotes);
-    setShowApprove(false);
-    setAdminNotes('');
-    setLoading(false);
-  };
-
-  const handleRejectClick = async () => {
-    if (!rejectionReason) {
-      alert('Please select a rejection reason');
-      return;
-    }
-    setLoading(true);
-    await onReject(loan.id, rejectionReason, adminNotes);
-    setShowReject(false);
-    setRejectionReason('');
-    setAdminNotes('');
-    setLoading(false);
-  };
-
-  if (showApprove) {
-    return (
-      <div style={{ minWidth: '200px' }}>
-        <div className="form-group" style={{ marginBottom: '10px' }}>
-          <label style={{ fontSize: '12px' }}>Admin Notes (optional)</label>
-          <textarea
-            value={adminNotes}
-            onChange={(e) => setAdminNotes(e.target.value)}
-            rows="2"
-            style={{ fontSize: '12px', padding: '5px' }}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: '5px' }}>
-          <button
-            className="btn btn-success"
-            onClick={handleApproveClick}
-            disabled={loading}
-            style={{ padding: '5px 10px', fontSize: '12px' }}
-          >
-            Confirm
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => {
-              setShowApprove(false);
-              setAdminNotes('');
-            }}
-            style={{ padding: '5px 10px', fontSize: '12px' }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (showReject) {
-    return (
-      <div style={{ minWidth: '250px' }}>
-        <div className="form-group" style={{ marginBottom: '10px' }}>
-          <label style={{ fontSize: '12px' }}>Reason *</label>
-          <select
-            value={rejectionReason}
-            onChange={(e) => setRejectionReason(e.target.value)}
-            style={{ fontSize: '12px', padding: '5px', width: '100%' }}
-            required
-          >
-            <option value="">Select...</option>
-            {reasons.map((reason) => (
-              <option key={reason.code} value={reason.code}>
-                {reason.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="form-group" style={{ marginBottom: '10px' }}>
-          <label style={{ fontSize: '12px' }}>Admin Notes (optional)</label>
-          <textarea
-            value={adminNotes}
-            onChange={(e) => setAdminNotes(e.target.value)}
-            rows="2"
-            style={{ fontSize: '12px', padding: '5px' }}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: '5px' }}>
-          <button
-            className="btn btn-danger"
-            onClick={handleRejectClick}
-            disabled={loading || !rejectionReason}
-            style={{ padding: '5px 10px', fontSize: '12px' }}
-          >
-            Confirm
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => {
-              setShowReject(false);
-              setRejectionReason('');
-              setAdminNotes('');
-            }}
-            style={{ padding: '5px 10px', fontSize: '12px' }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: 'flex', gap: '5px' }}>
-      <button
-        className="btn btn-success"
-        onClick={() => {
-          setShowApprove(true);
-          setShowReject(false);
-        }}
-        style={{ padding: '5px 10px', fontSize: '12px' }}
-      >
-        Approve
-      </button>
-      <button
-        className="btn btn-danger"
-        onClick={() => {
-          setShowReject(true);
-          setShowApprove(false);
-        }}
-        style={{ padding: '5px 10px', fontSize: '12px' }}
-      >
-        Reject
-      </button>
-    </div>
-  );
-}
 
 export default AdminDashboard;
 

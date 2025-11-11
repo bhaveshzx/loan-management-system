@@ -2,46 +2,48 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import './dashboard.css';
 
 function LoanDetail() {
   const { loanId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [loan, setLoan] = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showApprove, setShowApprove] = useState(false);
-  const [showReject, setShowReject] = useState(false);
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
   const [adminNotes, setAdminNotes] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [reasons, setReasons] = useState([]);
   const [actionLoading, setActionLoading] = useState(false);
+  const [toasts, setToasts] = useState([]);
 
   useEffect(() => {
     fetchLoanDetails();
     if (user?.role === 'admin') {
       fetchReasons();
     }
-  }, [loanId]);
+  }, [loanId, user]);
+
+  const showToast = (message, type = 'info') => {
+    const id = Date.now();
+    const toast = { id, message, type };
+    setToasts(prev => [...prev, toast]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
 
   const fetchLoanDetails = async () => {
+    setLoading(true);
+    setError('');
     try {
-      setLoading(true);
       const response = await api.get(`/loans/${loanId}`);
       setLoan(response.data.loan);
-      
-      // If admin, fetch user profile for additional context
-      if (user?.role === 'admin' && response.data.loan.user_id) {
-        try {
-          // Note: We don't have a direct endpoint to get user profile by ID
-          // But we can show the user info from the loan response
-        } catch (err) {
-          console.error('Failed to fetch user profile:', err);
-        }
-      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load loan details');
+      showToast('Failed to load loan details', 'error');
     } finally {
       setLoading(false);
     }
@@ -61,16 +63,15 @@ function LoanDetail() {
     setError('');
     try {
       await api.post(`/admin/loans/${loanId}/approve`, { admin_notes: adminNotes });
-      setShowApprove(false);
+      setShowApproveModal(false);
       setAdminNotes('');
-      // Refresh loan details
+      showToast('Loan approved successfully!', 'success');
       await fetchLoanDetails();
-      // Show success message and refresh parent list
-      alert('Loan approved successfully!');
-      // Trigger a custom event to refresh the loans list
       window.dispatchEvent(new Event('loansUpdated'));
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to approve loan');
+      const errorMsg = err.response?.data?.error || 'Failed to approve loan';
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
     } finally {
       setActionLoading(false);
     }
@@ -79,6 +80,7 @@ function LoanDetail() {
   const handleReject = async () => {
     if (!rejectionReason) {
       setError('Please select a rejection reason');
+      showToast('Please select a rejection reason', 'error');
       return;
     }
     setActionLoading(true);
@@ -88,27 +90,34 @@ function LoanDetail() {
         rejection_reason: rejectionReason,
         admin_notes: adminNotes,
       });
-      setShowReject(false);
+      setShowRejectModal(false);
       setRejectionReason('');
       setAdminNotes('');
-      // Refresh loan details
+      showToast('Loan rejected successfully!', 'success');
       await fetchLoanDetails();
-      // Show success message and refresh parent list
-      alert('Loan rejected successfully!');
-      // Trigger a custom event to refresh the loans list
       window.dispatchEvent(new Event('loansUpdated'));
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to reject loan');
+      const errorMsg = err.response?.data?.error || 'Failed to reject loan';
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
     } finally {
       setActionLoading(false);
     }
   };
 
+  const closeModals = () => {
+    setShowApproveModal(false);
+    setShowRejectModal(false);
+    setAdminNotes('');
+    setRejectionReason('');
+    setError('');
+  };
+
   const getStatusBadge = (status) => {
     const badges = {
-      pending: <span className="badge badge-pending">Pending</span>,
-      approved: <span className="badge badge-approved">Approved</span>,
-      rejected: <span className="badge badge-rejected">Rejected</span>,
+      pending: <span className="status-badge pending">Pending</span>,
+      approved: <span className="status-badge approved">Approved</span>,
+      rejected: <span className="status-badge rejected">Rejected</span>,
     };
     return badges[status] || status;
   };
@@ -126,18 +135,22 @@ function LoanDetail() {
 
   if (loading) {
     return (
-      <div className="container">
-        <div className="card">Loading loan details...</div>
+      <div className="dashboard-container">
+        <div className="dashboard-loading">
+          <div className="loading-spinner-large"></div>
+          <p className="loading-text">Loading loan details...</p>
+        </div>
       </div>
     );
   }
 
   if (error && !loan) {
     return (
-      <div className="container">
-        <div className="card">
-          <div className="error">{error}</div>
-          <button className="btn btn-secondary" onClick={() => navigate('/loans')}>
+      <div className="dashboard-container">
+        <div className="quick-actions-card">
+          <div className="error-message">⚠️ {error}</div>
+          <button className="btn-action btn-action-secondary" onClick={() => navigate('/loans')}>
+            <span>←</span>
             Back to Loans
           </button>
         </div>
@@ -147,124 +160,51 @@ function LoanDetail() {
 
   if (!loan) {
     return (
-      <div className="container">
-        <div className="card">Loan not found</div>
+      <div className="dashboard-container">
+        <div className="quick-actions-card">
+          <div className="empty-state">
+            <div className="empty-state-icon">❌</div>
+            <p className="empty-state-text">Loan not found</p>
+            <button className="btn-action btn-action-secondary" onClick={() => navigate('/loans')}>
+              <span>←</span>
+              Back to Loans
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container" style={{ maxWidth: '800px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1>Loan Application Details</h1>
-        <button className="btn btn-secondary" onClick={() => navigate('/loans')}>
-          Back to Loans
-        </button>
+    <div className="dashboard-container">
+      {/* Toast Notifications */}
+      <div className="toast-container">
+        {toasts.map(toast => (
+          <div key={toast.id} className={`toast ${toast.type}`}>
+            <span className="toast-icon">
+              {toast.type === 'success' ? '✓' : toast.type === 'error' ? '✗' : 'ℹ️'}
+            </span>
+            <span className="toast-message">{toast.message}</span>
+            <button className="toast-close" onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}>
+              ×
+            </button>
+          </div>
+        ))}
       </div>
 
-      <div className="card">
-        <h2>Application Information</h2>
-        {error && <div className="error">{error}</div>}
-        
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
-          <div>
-            <strong>Application ID:</strong>
-            <p>{loan.id}</p>
-          </div>
-          <div>
-            <strong>Status:</strong>
-            <p>{getStatusBadge(loan.status)}</p>
-          </div>
-          {user?.role === 'admin' && (
-            <>
-              <div>
-                <strong>Applicant:</strong>
-                <p>{loan.user?.username} ({loan.user?.email})</p>
-              </div>
-              <div>
-                <strong>User ID:</strong>
-                <p>{loan.user_id}</p>
-              </div>
-            </>
-          )}
-          <div>
-            <strong>Loan Amount:</strong>
-            <p>${loan.amount.toLocaleString()}</p>
-          </div>
-          <div>
-            <strong>Purpose:</strong>
-            <p>{loan.purpose}</p>
-          </div>
-          <div>
-            <strong>Created At:</strong>
-            <p>{new Date(loan.created_at).toLocaleString()}</p>
-          </div>
-          <div>
-            <strong>Last Updated:</strong>
-            <p>{new Date(loan.updated_at).toLocaleString()}</p>
-          </div>
-          {loan.reviewed_at && (
-            <>
-              <div>
-                <strong>Reviewed At:</strong>
-                <p>{new Date(loan.reviewed_at).toLocaleString()}</p>
-              </div>
-              {loan.reviewed_by && (
-                <div>
-                  <strong>Reviewed By:</strong>
-                  <p>Admin (ID: {loan.reviewed_by})</p>
-                </div>
-              )}
-            </>
-          )}
-          {loan.rejection_reason && (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <strong>Rejection Reason:</strong>
-              <p>{getRejectionReasonLabel(loan.rejection_reason)}</p>
+      {/* Approve Modal */}
+      {showApproveModal && (
+        <div className="modal-overlay" onClick={closeModals}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Approve Loan #{loan.id}</h3>
+              <button className="modal-close" onClick={closeModals}>×</button>
             </div>
-          )}
-          {loan.admin_notes && (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <strong>Admin Notes:</strong>
-              <p>{loan.admin_notes}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {user?.role === 'admin' && loan.status === 'pending' && (
-        <div className="card" style={{ marginTop: '20px' }}>
-          <h2>Admin Actions</h2>
-          
-          {!showApprove && !showReject && (
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                className="btn btn-success"
-                onClick={() => {
-                  setShowApprove(true);
-                  setShowReject(false);
-                  setError('');
-                }}
-              >
-                Approve Loan
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => {
-                  setShowReject(true);
-                  setShowApprove(false);
-                  setError('');
-                }}
-              >
-                Reject Loan
-              </button>
-            </div>
-          )}
-
-          {showApprove && (
-            <div style={{ marginTop: '20px', padding: '15px', border: '1px solid #ddd', borderRadius: '4px' }}>
-              <h3>Approve Loan Application</h3>
-              <div className="form-group">
+            <div className="modal-body">
+              <p><strong>User:</strong> {loan.user?.username}</p>
+              <p><strong>Amount:</strong> ${loan.amount.toLocaleString()}</p>
+              <p><strong>Purpose:</strong> {loan.purpose}</p>
+              <div className="form-group" style={{ marginTop: '20px' }}>
                 <label>Admin Notes (optional)</label>
                 <textarea
                   value={adminNotes}
@@ -273,40 +213,40 @@ function LoanDetail() {
                   placeholder="Add any notes about this approval..."
                 />
               </div>
-              {error && <div className="error">{error}</div>}
-              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                <button
-                  className="btn btn-success"
-                  onClick={handleApprove}
-                  disabled={actionLoading}
-                >
-                  {actionLoading ? 'Processing...' : 'Confirm Approval'}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowApprove(false);
-                    setAdminNotes('');
-                    setError('');
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
+              {error && <div className="error-message">⚠️ {error}</div>}
             </div>
-          )}
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeModals} disabled={actionLoading}>
+                Cancel
+              </button>
+              <button className="btn btn-success" onClick={handleApprove} disabled={actionLoading}>
+                {actionLoading ? 'Approving...' : 'Approve Loan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-          {showReject && (
-            <div style={{ marginTop: '20px', padding: '15px', border: '1px solid #ddd', borderRadius: '4px' }}>
-              <h3>Reject Loan Application</h3>
-              <div className="form-group">
+      {/* Reject Modal */}
+      {showRejectModal && (
+        <div className="modal-overlay" onClick={closeModals}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reject Loan #{loan.id}</h3>
+              <button className="modal-close" onClick={closeModals}>×</button>
+            </div>
+            <div className="modal-body">
+              <p><strong>User:</strong> {loan.user?.username}</p>
+              <p><strong>Amount:</strong> ${loan.amount.toLocaleString()}</p>
+              <p><strong>Purpose:</strong> {loan.purpose}</p>
+              <div className="form-group" style={{ marginTop: '20px' }}>
                 <label>Rejection Reason *</label>
                 <select
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
                   required
                 >
-                  <option value="">Select reason...</option>
+                  <option value="">Select a reason...</option>
                   {reasons.map((reason) => (
                     <option key={reason.code} value={reason.code}>
                       {reason.label}
@@ -320,44 +260,171 @@ function LoanDetail() {
                   value={adminNotes}
                   onChange={(e) => setAdminNotes(e.target.value)}
                   rows="4"
-                  placeholder="Add any notes about this rejection..."
+                  placeholder="Add any additional notes about this rejection..."
                 />
               </div>
-              {error && <div className="error">{error}</div>}
-              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                <button
-                  className="btn btn-danger"
-                  onClick={handleReject}
-                  disabled={actionLoading || !rejectionReason}
-                >
-                  {actionLoading ? 'Processing...' : 'Confirm Rejection'}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowReject(false);
-                    setRejectionReason('');
-                    setAdminNotes('');
-                    setError('');
-                  }}
-                >
-                  Cancel
-                </button>
+              {error && <div className="error-message">⚠️ {error}</div>}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closeModals} disabled={actionLoading}>
+                Cancel
+              </button>
+              <button 
+                className="btn btn-danger" 
+                onClick={handleReject} 
+                disabled={actionLoading || !rejectionReason}
+              >
+                {actionLoading ? 'Rejecting...' : 'Reject Loan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="dashboard-header">
+        <div>
+          <h1>Loan Application Details</h1>
+          <p className="dashboard-welcome">Application ID: #{loan.id}</p>
+        </div>
+        <button className="btn-action btn-action-secondary" onClick={() => navigate('/loans')}>
+          <span>←</span>
+          Back to Loans
+        </button>
+      </div>
+
+      <div className="quick-actions-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ margin: 0 }}>Application Information</h2>
+          {getStatusBadge(loan.status)}
+        </div>
+        
+        {error && <div className="error-message">⚠️ {error}</div>}
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginTop: '20px' }}>
+          <div className="info-item">
+            <div className="info-label">Application ID</div>
+            <div className="info-value">#{loan.id}</div>
+          </div>
+          
+          {user?.role === 'admin' && (
+            <>
+              <div className="info-item">
+                <div className="info-label">Applicant</div>
+                <div className="info-value">{loan.user?.username}</div>
+              </div>
+              <div className="info-item">
+                <div className="info-label">Email</div>
+                <div className="info-value">{loan.user?.email || 'N/A'}</div>
+              </div>
+              <div className="info-item">
+                <div className="info-label">User ID</div>
+                <div className="info-value">#{loan.user_id}</div>
+              </div>
+            </>
+          )}
+          
+          <div className="info-item">
+            <div className="info-label">Loan Amount</div>
+            <div className="info-value" style={{ color: '#667eea', fontSize: '24px', fontWeight: '700' }}>
+              ${loan.amount.toLocaleString()}
+            </div>
+          </div>
+          
+          <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+            <div className="info-label">Purpose</div>
+            <div className="info-value" style={{ padding: '15px', background: '#f8f9fa', borderRadius: '8px', lineHeight: '1.6' }}>
+              {loan.purpose}
+            </div>
+          </div>
+          
+          <div className="info-item">
+            <div className="info-label">Created At</div>
+            <div className="info-value">{new Date(loan.created_at).toLocaleString()}</div>
+          </div>
+          
+          <div className="info-item">
+            <div className="info-label">Last Updated</div>
+            <div className="info-value">{new Date(loan.updated_at).toLocaleString()}</div>
+          </div>
+          
+          {loan.reviewed_at && (
+            <>
+              <div className="info-item">
+                <div className="info-label">Reviewed At</div>
+                <div className="info-value">{new Date(loan.reviewed_at).toLocaleString()}</div>
+              </div>
+              {loan.reviewed_by && (
+                <div className="info-item">
+                  <div className="info-label">Reviewed By</div>
+                  <div className="info-value">Admin #{loan.reviewed_by}</div>
+                </div>
+              )}
+            </>
+          )}
+          
+          {loan.rejection_reason && (
+            <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+              <div className="info-label">Rejection Reason</div>
+              <div className="info-value">
+                <span className="status-badge rejected">{getRejectionReasonLabel(loan.rejection_reason)}</span>
+              </div>
+            </div>
+          )}
+          
+          {loan.admin_notes && (
+            <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+              <div className="info-label">Admin Notes</div>
+              <div className="info-value" style={{ padding: '15px', background: '#f8f9fa', borderRadius: '8px', lineHeight: '1.6' }}>
+                {loan.admin_notes}
               </div>
             </div>
           )}
         </div>
+      </div>
+
+      {user?.role === 'admin' && loan.status === 'pending' && (
+        <div className="quick-actions-card">
+          <h2>Admin Actions</h2>
+          <div className="quick-actions">
+            <button
+              className="btn-action btn-action-success"
+              onClick={() => {
+                setShowApproveModal(true);
+                setShowRejectModal(false);
+                setError('');
+              }}
+            >
+              <span>✓</span>
+              Approve Loan
+            </button>
+            <button
+              className="btn-action btn-action-danger"
+              onClick={() => {
+                setShowRejectModal(true);
+                setShowApproveModal(false);
+                setError('');
+              }}
+            >
+              <span>✗</span>
+              Reject Loan
+            </button>
+          </div>
+        </div>
       )}
 
       {loan.status !== 'pending' && (
-        <div className="card" style={{ marginTop: '20px' }}>
-          <h3>Application Status</h3>
-          <p>
-            This loan application has been <strong>{loan.status}</strong>.
+        <div className="quick-actions-card">
+          <h2>Application Status</h2>
+          <div style={{ padding: '20px', background: loan.status === 'approved' ? '#d4edda' : '#f8d7da', borderRadius: '8px', border: `2px solid ${loan.status === 'approved' ? '#28a745' : '#dc3545'}` }}>
+            <p style={{ fontSize: '18px', margin: 0, color: loan.status === 'approved' ? '#155724' : '#721c24' }}>
+              <strong>Status: {loan.status.charAt(0).toUpperCase() + loan.status.slice(1)}</strong>
+            </p>
             {loan.status === 'rejected' && loan.rejection_reason && (
-              <> Reason: {getRejectionReasonLabel(loan.rejection_reason)}</>
+              <p style={{ marginTop: '10px', color: '#721c24' }}>
+                <strong>Reason:</strong> {getRejectionReasonLabel(loan.rejection_reason)}
+              </p>
             )}
-          </p>
+          </div>
         </div>
       )}
     </div>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Light off-white background -->
+  <rect width="32" height="32" fill="#FAFAFA"/>
+  <!-- Black L and M, Orange S - centered text -->
+  <text x="16" y="22" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle" letter-spacing="0.5">
+    <tspan fill="#000000">LM</tspan><tspan fill="#FF6600">S</tspan>
+  </text>
+</svg>

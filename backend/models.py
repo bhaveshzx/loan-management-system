@@ -177,3 +177,72 @@ class PendingLogin(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
+class PasswordReset(db.Model):
+    """Stores password reset OTP and reset token"""
+    __tablename__ = 'password_resets'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    email = db.Column(db.String(120), nullable=False)
+    otp = db.Column(db.String(6), nullable=False)
+    otp_expires_at = db.Column(db.DateTime, nullable=False)
+    otp_attempts = db.Column(db.Integer, default=0, nullable=False)
+    max_otp_attempts = db.Column(db.Integer, default=5, nullable=False)
+    reset_token = db.Column(db.String(255), nullable=True)
+    reset_token_expires_at = db.Column(db.DateTime, nullable=True)
+    reset_token_used = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref='password_resets')
+    
+    def generate_otp(self):
+        """Generate a 6-digit OTP"""
+        self.otp = ''.join(random.choices(string.digits, k=6))
+        self.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)  # OTP expires in 10 minutes
+        self.otp_attempts = 0  # Reset attempts when generating new OTP
+        return self.otp
+    
+    def is_otp_valid(self, provided_otp):
+        """Check if provided OTP is valid, not expired, and within attempt limit"""
+        if datetime.utcnow() > self.otp_expires_at:
+            return False
+        if self.otp_attempts >= self.max_otp_attempts:
+            return False
+        return self.otp == provided_otp
+    
+    def increment_attempts(self):
+        """Increment OTP verification attempts"""
+        self.otp_attempts += 1
+    
+    def generate_reset_token(self):
+        """Generate a reset token (UUID-like string)"""
+        import uuid
+        self.reset_token = str(uuid.uuid4()).replace('-', '')
+        self.reset_token_expires_at = datetime.utcnow() + timedelta(minutes=15)  # Reset token expires in 15 minutes
+        self.reset_token_used = False
+        return self.reset_token
+    
+    def is_reset_token_valid(self):
+        """Check if reset token is valid and not expired or used"""
+        if not self.reset_token:
+            return False
+        if self.reset_token_used:
+            return False
+        if datetime.utcnow() > self.reset_token_expires_at:
+            return False
+        return True
+    
+    def mark_reset_token_used(self):
+        """Mark reset token as used"""
+        self.reset_token_used = True
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'email': self.email,
+            'otp_attempts': self.otp_attempts,
+            'max_otp_attempts': self.max_otp_attempts,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+

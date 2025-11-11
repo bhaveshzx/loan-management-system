@@ -81,11 +81,13 @@ Loan Management System
         sender_email = current_app.config.get('MAIL_USERNAME', 'noreply@loanmanagement.com')
         print(f"DEBUG: Sending loan notification from: {sender_email} to: {user.email}")
         
+        # Use LMS as display name with the sender email
         msg = Message(
             subject=subject,
             recipients=[user.email],
             body=body,
-            sender=sender_email
+            sender=('LMS', sender_email),
+            reply_to=sender_email
         )
         mail.send(msg)
         print(f"Email notification sent to {user.email} from {sender_email}")
@@ -155,11 +157,12 @@ Loan Management System
         
         # For Gmail, the sender MUST match the authenticated account
         # Use the authenticated email as both sender and reply-to
+        # Set display name as "LMS" while keeping the actual email address
         msg = Message(
             subject=subject,
             recipients=[email],
             body=body,
-            sender=sender_email,
+            sender=('LMS', sender_email),
             reply_to=sender_email
         )
         
@@ -173,6 +176,75 @@ Loan Management System
     except Exception as e:
         error_msg = str(e)
         print(f"Failed to send OTP email: {e}")
+        
+        # Provide helpful error messages for common Gmail issues
+        if "BadCredentials" in error_msg or "Username and Password not accepted" in error_msg:
+            print("\n" + "="*60)
+            print("GMAIL AUTHENTICATION ERROR - Troubleshooting Steps:")
+            print("="*60)
+            print("1. Make sure 2-Step Verification is enabled on your Google Account")
+            print("2. Generate an App Password (not your regular password):")
+            print("   https://myaccount.google.com/apppasswords")
+            print("3. Use the 16-character App Password (remove spaces if any)")
+            print("4. Update MAIL_USERNAME and MAIL_PASSWORD in backend/.env file")
+            print("5. Restart the Flask server after updating .env")
+            print("="*60 + "\n")
+        
+        return False
+
+def send_password_reset_otp(email, otp, username):
+    """Send password reset OTP email"""
+    if not current_app.config.get('MAIL_USERNAME'):
+        print("Email not configured. Skipping password reset OTP email.")
+        return False
+    
+    # Get mail instance from current_app
+    mail = current_app.extensions.get('mail')
+    if not mail:
+        print("Mail extension not found. Skipping password reset OTP email.")
+        return False
+    
+    subject = "Password Reset - OTP Code"
+    body = f"""
+Dear {username},
+
+You have requested to reset your password for your Loan Management System account.
+
+Your OTP (One-Time Password) for password reset is:
+
+{otp}
+
+This OTP will expire in 10 minutes.
+
+If you did not request this password reset, please ignore this email and secure your account immediately.
+
+Best regards,
+Loan Management System
+"""
+    
+    try:
+        # Get sender email from config
+        sender_email = current_app.config.get('MAIL_USERNAME', 'noreply@loanmanagement.com')
+        
+        print(f"DEBUG: Sending password reset OTP email to: {email}")
+        
+        # Use LMS as display name with the sender email
+        msg = Message(
+            subject=subject,
+            recipients=[email],
+            body=body,
+            sender=('LMS', sender_email),
+            reply_to=sender_email
+        )
+        
+        print(f"DEBUG: Message sender set to: {msg.sender}")
+        
+        mail.send(msg)
+        print(f"SUCCESS: Password reset OTP email sent to {email} from {sender_email}")
+        return True
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Failed to send password reset OTP email: {e}")
         
         # Provide helpful error messages for common Gmail issues
         if "BadCredentials" in error_msg or "Username and Password not accepted" in error_msg:
